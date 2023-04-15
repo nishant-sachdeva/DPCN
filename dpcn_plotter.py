@@ -56,7 +56,7 @@ def simulate_attack(graph):
 
         # remove attack_fraction
         def attack():
-            nodes_by_degree = sorted(graph.nodes(), key=lambda x: graph.degree[x], reverse=True)
+            nodes_by_degree = sorted(graph.nodes(), key=lambda x: graph.in_degree(x), reverse=True)
             num_nodes_to_remove = int(attack_fraction * graph.number_of_nodes())
             nodes_to_remove = nodes_by_degree[:num_nodes_to_remove]
             graph.remove_nodes_from(nodes_to_remove)
@@ -123,7 +123,7 @@ def plot_graphs(marked_graph_set):
         
         graph.remove_nodes_from(largest_connected_component)
 
-        cluster_sizses = [len(c) for c in connected_components]
+        cluster_sizes = [len(c) for c in connected_components]
 
         ### CLUSTER SIZE DISTRIBUTION
         freq_dist = Counter(cluster_sizes)
@@ -135,15 +135,13 @@ def plot_graphs(marked_graph_set):
         plt.title('Cluster size distribution')
         plt.savefig("dpcn_attack_clusters/set{}/graph{}.png".format(i, j))
 
-        other_cluster_sizes = cluster_sizses[1:]
+        other_cluster_sizes = cluster_sizes[1:]
 
         if len(other_cluster_sizes) > 0:
             other_cluster = np.mean(np.array(other_cluster_sizes))
         else:
             other_cluster = 0
         other_clusters_attack.append(other_cluster)
-
-        plot_cluster_size_distribution(i, j, graph)
 
     
     plt.scatter(attack_fractions, largest_clusters_attack, label="Largest cluster (attack)")
