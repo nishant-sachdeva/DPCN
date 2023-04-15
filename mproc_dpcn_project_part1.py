@@ -125,7 +125,7 @@ class createGraphs:
         with open(file_path, 'w') as f:
             for edge in graph.edges(data=True):
                 nodeA, nodeB, timestamp = edge[0], edge[1], edge[2]['timestamp']
-                print(nodeA, nodeB, timestamp)
+                # print(nodeA, nodeB, timestamp)
                 f.write(f"{nodeA} {nodeB} {timestamp}\n")
     
     def store_graph_set(self, marked_graph_set):
@@ -150,14 +150,14 @@ class createGraphs:
         pool = multiprocessing.Pool(processes=20)
         input = zip([i for i in range(len(self.result_graphs))], self.result_graphs)
 
-        _ = pool.map(self.store_graph_set, input)
+        _stored_graphs = pool.map(self.store_graph_set, input)
         pool.close()
         pool.join()
         print("Done")
 
 
 if __name__ == "__main__":
-    attack_types = ["failure"]
+    attack_types = ["attack", "failure"]
 
     for attack_type in attack_types:
         graphSet = createGraphs(
