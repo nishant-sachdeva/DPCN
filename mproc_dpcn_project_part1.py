@@ -26,130 +26,147 @@ Here are the steps we are looking to implement.
 """
 
 import pandas as pd
-import numpy as np
-
-# Read the math overflow data
-# it should contain 3 columns, nodeA, nodeB, timestamp
-
-df = pd.read_csv("sx-mathoverflow-a2q.txt", sep=" ", names=["A", "B", "timestamp"])
-df = df.sort_values(by=['timestamp'])
-
-## DIVIDE THE DATA INTO 20 GROUPS BASED ON TIMESTAMPS
-
-# calculate the partition size
-num_rows = len(df)
-number_of_paritions = 5
-partition_size = num_rows // number_of_paritions
-
-# divide the data into partitions
-partitions = []
-for i in range(1, number_of_paritions+1):
-    end_index = i*partition_size
-    partition = df.iloc[:end_index]
-    partitions.append(partition)
-
-## WE HAVE THE 20 PARTITIONS
-# Now, we make 20 static graphs, simulate attack on them.
-
 import networkx as nx
-
-graphs = []
-for p in partitions:
-    G = nx.from_pandas_edgelist(p, source='A', target='B', edge_attr='timestamp')
-    graphs.append(G)
-
-# here we have our graphs
-
+import numpy as np
+import os
 import matplotlib.pyplot as plt
-import random
+import multiprocessing
 
 
-def simulate_attack(graph):
-    attack_fraction = 0.02
-    attack_so_far = 0
+class createGraphs:
+    def __init__(self, mathoverFlowDataPath, numPartitions, attackFraction, attackFractionMax, attackFunction, store_directory):
+        self.mathoverFlowDataPath = mathoverFlowDataPath
+        self.numPartitions = numPartitions
+        self.attackFraction = attackFraction
+        self.attackFractionMax = attackFractionMax
+        self.attackFunction = attackFunction
+        self.directory_name = store_directory
+        self.result_graphs = []
 
-    number_of_attacks_so_far = 0
 
-    captured_graphs = []
+    # Read the math overflow data
+    # it should contain 3 columns, nodeA, nodeB, timestamp
+    def read_data_into_graphs(self):
+        df = pd.read_csv(
+            self.mathoverFlowDataPath, sep=" ", names=["A", "B", "timestamp"]
+        ).sort_values(by=['timestamp'])
 
-    while attack_so_far < 0.4:
-        # plot the appropriate data points for the current graph
-        # capture_graph_data(graph)
+        # calculate the partition size
+        partition_size = len(df) // self.numPartitions
 
-        # remove attack_fraction
-        def attack():
+        # divide the data into partitions
+        partitions = [
+            df.iloc[:(i*partition_size)] for i in range(1, self.numPartitions+1)
+        ]
+        
+        graphs = [nx.from_pandas_edgelist(p, source='A', target='B', edge_attr='timestamp') for p in partitions]
+
+        return graphs
+
+
+    def conduct_attack(self, graph):
+        def attack(graph, attack_fraction):
             nodes_by_degree = sorted(graph.nodes(), key=lambda x: graph.degree[x], reverse=True)
             num_nodes_to_remove = int(attack_fraction * graph.number_of_nodes())
             nodes_to_remove = nodes_by_degree[:num_nodes_to_remove]
             graph.remove_nodes_from(nodes_to_remove)
+            return graph
 
 
-        def failure():
+        def failure(graph, attack_fraction):
             # do nothing
             num_nodes_to_remove = int(attack_fraction * graph.number_of_nodes())
             nodes_remove = np.random.choice(graph.nodes(), size = num_nodes_to_remove, replace = False)
             graph.remove_nodes_from(nodes_remove)
+            return graph
+
+
+
+        def simulate_attack(graph, attack_fraction, attack_fraction_max, attack_function):
+            attack_so_far = 0
+            captured_graphs = []
+
+            while attack_so_far < attack_fraction_max:
+                # plot the appropriate data points for the current graph
+                # capture_graph_data(graph)
+                if attack_function == "attack":
+                    graph = attack(graph, attack_fraction)
+                elif attack_function == "failure":
+                    graph = failure(graph, attack_fraction)
+                
+                captured_graphs.append(graph.copy())
+                attack_so_far += attack_fraction
+
+            return captured_graphs
+    
+        return simulate_attack(
+            graph, 
+            self.attackFraction, 
+            self.attackFractionMax,
+            self.attackFunction
+        )
+
+    def generate_graphs(self):
+        pool = multiprocessing.Pool()
+        pool = multiprocessing.Pool(processes=20)
+        inputs = self.read_data_into_graphs()
+        self.result_graphs = pool.map(self.conduct_attack, inputs)
+        pool.close()
+        pool.join()
+        print("Created Graphs")
+
+    def store_graph_into_file(self, marked_graph):
+        (graph_set_id, graph_id, graph) = marked_graph
+        folder_name = "set" + str(graph_set_id)
+        file_name = "graph" + str(graph_id) + ".txt"
+
+        file_path = self.directory_name + folder_name + '/' + file_name
+
+        with open(file_path, 'w') as f:
+            for edge in graph.edges(data=True):
+                nodeA, nodeB, timestamp = edge[0], edge[1], edge[2]['timestamp']
+                print(nodeA, nodeB, timestamp)
+                f.write(f"{nodeA} {nodeB} {timestamp}\n")
+    
+    def store_graph_set(self, marked_graph_set):
+        (i, graph_set) = marked_graph_set
+
+        folder_name = "set" + str(i)
+
+        dir_path = self.directory_name + folder_name
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
+        input = [(i, j, graph) for (j, graph) in zip([i for i in range(len(graph_set))], graph_set)]
+
+        for marked_graph in input:
+            self.store_graph_into_file(marked_graph)
         
-        # attack()
-        failure()
+        print("storage done for folder", dir_path)
+        return 1
 
-        captured_graphs.append(graph.copy())
-        attack_so_far += attack_fraction
-        number_of_attacks_so_far += 1
-        
+    def store_graphs(self):
+        pool = multiprocessing.Pool()
+        pool = multiprocessing.Pool(processes=20)
+        input = zip([i for i in range(len(self.result_graphs))], self.result_graphs)
 
-    return captured_graphs
-
-import multiprocessing
-
-result_graphs = []
-
-pool = multiprocessing.Pool()
-pool = multiprocessing.Pool(processes=20)
-inputs = graphs
-
-result_graphs = pool.map(simulate_attack, inputs)
-
-print("Done")
+        _ = pool.map(self.store_graph_set, input)
+        pool.close()
+        pool.join()
+        print("Done")
 
 
-import os
+if __name__ == "__main__":
+    attack_types = ["failure"]
 
-
-def store_graph_into_file(marked_graph):
-    (graph_set_id, graph_id, graph) = marked_graph
-    folder_name = "set" + str(graph_set_id)
-    file_name = "graph" + str(graph_id) + ".txt"
-
-    file_path = 'dpcn_result_graphs_failure/' + folder_name + '/' + file_name
-
-    with open(file_path, 'w') as f:
-        for edge in graph.edges(data=True):
-            nodeA, nodeB, timestamp = edge[0], edge[1], edge[2]['timestamp']
-            print(nodeA, nodeB, timestamp)
-            f.write(f"{nodeA} {nodeB} {timestamp}\n")
-
-    return 1
-
-def store_graph_set_into_file(marked_graph_set):
-    (i, graph_set) = marked_graph_set
-
-    folder_name = "set" + str(i)
-
-    dir_path = 'dpcn_result_graphs_failure/' + folder_name
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
-
-    input = [(i, j, graph) for (j, graph) in zip([i for i in range(len(graph_set))], graph_set)]
-
-    for marked_graph in input:
-        store_graph_into_file(marked_graph)
-
-
-pool = multiprocessing.Pool()
-pool = multiprocessing.Pool(processes=20)
-input = zip([i for i in range(len(result_graphs))], result_graphs)
-
-result_graphs = pool.map(store_graph_set_into_file, input)
-
-print("Done")
+    for attack_type in attack_types:
+        graphSet = createGraphs(
+            mathoverFlowDataPath = "sx-mathoverflow-a2q.txt",
+            numPartitions = 5,
+            attackFraction = 0.02,
+            attackFractionMax = 0.4,
+            attackFunction = attack_type,
+            store_directory = 'dpcn_result_graphs_' + attack_type + '/'
+        )
+        graphSet.generate_graphs()
+        graphSet.store_graphs()

@@ -42,7 +42,7 @@ import random
 
 
 def simulate_attack(graph):
-    attack_fraction = 0.02
+    attack_fraction = 0.001
     attack_so_far = 0
 
     number_of_attacks_so_far = 0

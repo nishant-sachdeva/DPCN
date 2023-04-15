@@ -1,4 +1,1 @@
-dpcn_attack_clusters/*
-dpcn_attack_plots/*
-dpcn_result_graphs/*
-dpcn_result_graphs_failure/*
+dpcn_*/*
