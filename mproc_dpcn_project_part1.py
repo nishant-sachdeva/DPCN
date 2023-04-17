@@ -59,19 +59,27 @@ class createGraphs:
             df.iloc[:(i*partition_size)] for i in range(1, self.numPartitions+1)
         ]
         
-        graphs = [nx.from_pandas_edgelist(p, source='A', target='B', edge_attr='timestamp') for p in partitions]
+        # graphs = [
+        #     (lambda x, p: x.add_edges_from(zip(p['A'], p['B']), timestamp=p['timestamp']))(nx.DiGraph, p) for p in partitions
+        # ]
+
+        graphs = []
+        for p in partitions:
+            G = nx.DiGraph()
+            G.add_edges_from(zip(p['A'], p['B']), timestamp=p['timestamp'])
+            graphs.append(G)
 
         return graphs
 
 
     def conduct_attack(self, graph):
+        print("Conducting Attack")
         def attack(graph, attack_fraction):
-            nodes_by_degree = sorted(graph.nodes(), key=lambda x: graph.degree[x], reverse=True)
+            nodes_by_degree = sorted(graph.nodes(), key=lambda x: graph.out_degree[x], reverse=True)
             num_nodes_to_remove = int(attack_fraction * graph.number_of_nodes())
             nodes_to_remove = nodes_by_degree[:num_nodes_to_remove]
             graph.remove_nodes_from(nodes_to_remove)
             return graph
-
 
         def failure(graph, attack_fraction):
             # do nothing
@@ -79,8 +87,6 @@ class createGraphs:
             nodes_remove = np.random.choice(graph.nodes(), size = num_nodes_to_remove, replace = False)
             graph.remove_nodes_from(nodes_remove)
             return graph
-
-
 
         def simulate_attack(graph, attack_fraction, attack_fraction_max, attack_function):
             attack_so_far = 0
@@ -108,7 +114,7 @@ class createGraphs:
 
     def generate_graphs(self):
         pool = multiprocessing.Pool()
-        pool = multiprocessing.Pool(processes=20)
+        pool = multiprocessing.Pool(processes=self.numPartitions)
         inputs = self.read_data_into_graphs()
         self.result_graphs = pool.map(self.conduct_attack, inputs)
         pool.close()
@@ -119,8 +125,8 @@ class createGraphs:
         (graph_set_id, graph_id, graph) = marked_graph
         folder_name = "set" + str(graph_set_id)
         file_name = "graph" + str(graph_id) + ".txt"
-
         file_path = self.directory_name + folder_name + '/' + file_name
+        # print(file_path)
 
         with open(file_path, 'w') as f:
             for edge in graph.edges(data=True):
@@ -136,7 +142,8 @@ class createGraphs:
         dir_path = self.directory_name + folder_name
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
-
+        
+        print("storage starting for folder", dir_path)
         input = [(i, j, graph) for (j, graph) in zip([i for i in range(len(graph_set))], graph_set)]
 
         for marked_graph in input:
@@ -147,7 +154,7 @@ class createGraphs:
 
     def store_graphs(self):
         pool = multiprocessing.Pool()
-        pool = multiprocessing.Pool(processes=20)
+        pool = multiprocessing.Pool(processes=self.numPartitions)
         input = zip([i for i in range(len(self.result_graphs))], self.result_graphs)
 
         _stored_graphs = pool.map(self.store_graph_set, input)
@@ -155,18 +162,60 @@ class createGraphs:
         pool.join()
         print("Done")
 
+directory_name = 'dpcn_result_graphs_attack/'
 
-if __name__ == "__main__":
-    attack_types = ["attack", "failure"]
+def store_graph_into_file(marked_graph):
+    (graph_set_id, graph_id, graph) = marked_graph
+    folder_name = "set" + str(graph_set_id)
+    file_name = "graph" + str(graph_id) + ".txt"
+    file_path = directory_name + folder_name + '/' + file_name
+    # print(file_path)
+
+    with open(file_path, 'w') as f:
+        for edge in graph.edges(data=True):
+            nodeA, nodeB, timestamp = edge[0], edge[1], edge[2]['timestamp']
+            # print(nodeA, nodeB, timestamp)
+            f.write(f"{nodeA} {nodeB} {timestamp}\n")
+
+
+def graphset_storage_function(marked_graph_set):
+    (i, graph_set) = marked_graph_set
+
+    folder_name = "set" + str(i)
+
+    dir_path = directory_name + folder_name
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+    
+    print("storage starting for folder", dir_path)
+    input = [(i, j, graph) for (j, graph) in zip([i for i in range(len(graph_set))], graph_set)]
+
+    for marked_graph in input:
+        store_graph_into_file(marked_graph)
+    
+    print("storage done for folder", dir_path)
+    return 1
+
+
+
+def run():
+    attack_types = ["attack"]
 
     for attack_type in attack_types:
         graphSet = createGraphs(
             mathoverFlowDataPath = "sx-mathoverflow-a2q.txt",
             numPartitions = 5,
-            attackFraction = 0.02,
+            attackFraction = 0.005,
             attackFractionMax = 0.4,
             attackFunction = attack_type,
             store_directory = 'dpcn_result_graphs_' + attack_type + '/'
         )
         graphSet.generate_graphs()
-        graphSet.store_graphs()
+
+        relevant_graph_set = graphSet.result_graphs[4]
+        graphset_storage_function((4, relevant_graph_set))
+
+
+
+if __name__ == "__main__":
+    run()
